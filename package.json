@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "prisma generate && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.8",
     "@clerk/react": "^6.11.4",
-    "@prisma/client": "^7.8.0",
+    "@prisma/client": "^6.2.1",
     "@radix-ui/react-dialog": "^1.1.18",
     "axios": "^1.18.1",
     "bwip-js": "^4.11.2",
@@ -47,7 +47,7 @@
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.7.0",
     "postcss": "^8.5.16",
-    "prisma": "^7.8.0",
+    "prisma": "^6.2.1",
     "tailwindcss": "^4.3.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.62.0",
@@ -55,6 +55,6 @@
   },
   "prisma": {
     "schema": "src/server/prisma/schema.prisma",
-    "seed": "ts-node src/server/prisma/seed.ts"
+    "seed": "npx ts-node src/server/prisma/seed.ts"
   }
 }
