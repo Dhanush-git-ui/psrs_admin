@@ -11,7 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^7.8.0",
+    "@prisma/client": "^6.2.1",
     "bwip-js": "^4.11.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -26,7 +26,7 @@
     "@types/multer": "^2.2.0",
     "@types/node": "^26.1.0",
     "nodemon": "^3.1.14",
-    "prisma": "^7.8.0",
+    "prisma": "^6.2.1",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3"
   }
