@@ -54,6 +54,7 @@
     "vite": "^8.1.1"
   },
   "prisma": {
+    "schema": "src/server/prisma/schema.prisma",
     "seed": "ts-node src/server/prisma/seed.ts"
   }
 }
