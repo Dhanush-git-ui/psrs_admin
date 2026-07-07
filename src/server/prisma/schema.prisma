@@ -1,0 +1,305 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  WAREHOUSE_STAFF
+  MANAGER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProductStatus {
+  AVAILABLE
+  LOW_STOCK
+  OUT_OF_STOCK
+  DAMAGED
+}
+
+enum MovementAction {
+  CREATED
+  UPDATED
+  STOCK_ADDED
+  STOCK_REMOVED
+  PRODUCT_MOVED
+  ASSIGNED_TO_PROJECT
+  RETURNED
+  DAMAGED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  name         String
+  role         UserRole      @default(WAREHOUSE_STAFF)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  // Relations
+  managedWarehouses Warehouse[]  @relation("WarehouseManager")
+  projects          Project[]    @relation("ProjectEngineer")
+  receivedEntries   StockEntry[] @relation("ReceivedBy")
+  issuedStockOuts   StockOut[]   @relation("IssuedTo")
+  loggedStockOuts   StockOut[]   @relation("EmployeeLogger")
+  movements         ProductMovement[]
+  damagedReports    DamagedInventory[]
+  activityLogs      ActivityLog[]
+}
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  products  Product[]
+}
+
+model Supplier {
+  id            String       @id @default(uuid())
+  name          String
+  contactNumber String
+  email         String?
+  address       String?
+  products      Product[]
+  stockEntries  StockEntry[]
+}
+
+model Product {
+  id                 String             @id @default(uuid())
+  name               String
+  code               String             @unique // Custom unique code
+  sku                String             @unique
+  partNumber         String?
+  modelNumber        String?
+  categoryId         String
+  category           Category           @relation(fields: [categoryId], references: [id])
+  compatibleMachine  String?
+  description        String?
+  material           String?
+  weight             Float?             // Weight in kg
+  length             Float?             // dimensions in mm
+  width              Float?
+  height             Float?
+  unit               String             @default("pcs") // pcs, meters, sets etc.
+  manufacturer       String?
+  supplierId         String?
+  supplier           Supplier?          @relation(fields: [supplierId], references: [id])
+  
+  // Stock levels
+  minStock           Int                @default(10)
+  maxStock           Int                @default(1000)
+  currentStock       Int                @default(0)
+  reservedStock      Int                @default(0)
+  status             ProductStatus      @default(AVAILABLE)
+  
+  // Document links
+  images             String[]           // Array of image URLs (Cloudinary/S3)
+  technicalDrawing   String?
+  explodedView       String?
+  datasheetPdf       String?
+  installationManual String?
+  qrCode             String?
+  barcode            String?
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Relations
+  stockLocations     ProductLocation[]
+  stockEntries       StockEntry[]
+  stockOuts          StockOut[]
+  projectAllocations ProjectAllocation[]
+  damagedRecords     DamagedInventory[]
+  movements          ProductMovement[]
+}
+
+model Warehouse {
+  id             String            @id @default(uuid())
+  name           String            @unique
+  code           String            @unique
+  address        String
+  capacity       Int               // Total item slots/capacity
+  managerId      String?
+  manager        User?             @relation("WarehouseManager", fields: [managerId], references: [id])
+  description    String?
+  
+  racks          Rack[]
+  stockLocations ProductLocation[]
+  stockEntries   StockEntry[]
+  movements      ProductMovement[]
+}
+
+model Rack {
+  id          String            @id @default(uuid())
+  name        String            // Rack A, Rack B, etc.
+  warehouseId String
+  warehouse   Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  positions   Position[]
+  stockLocations ProductLocation[]
+  stockEntries   StockEntry[]
+  movements      ProductMovement[]
+}
+
+model Position {
+  id             String            @id @default(uuid())
+  name           String            // Position 1, Position 2
+  rackId         String
+  rack           Rack              @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  stockLocations ProductLocation[]
+  stockEntries   StockEntry[]
+}
+
+// Junction table showing where current items reside
+model ProductLocation {
+  id          String    @id @default(uuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  rackId      String
+  rack        Rack      @relation(fields: [rackId], references: [id])
+  positionId  String
+  position    Position  @relation(fields: [positionId], references: [id])
+  shelfNumber String    // e.g. Shelf 1, Shelf 2
+  quantity    Int       @default(0)
+
+  @@unique([productId, warehouseId, rackId, positionId, shelfNumber])
+}
+
+model Project {
+  id                 String              @id @default(uuid())
+  name               String
+  clientName         String
+  code               String              @unique
+  description        String?
+  startDate          DateTime
+  endDate            DateTime?
+  status             ProjectStatus       @default(ACTIVE)
+  images             String[]
+  documents          String[]
+  engineerId         String?
+  engineer           User?               @relation("ProjectEngineer", fields: [engineerId], references: [id])
+  notes              String?
+  
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  projectAllocations ProjectAllocation[]
+  stockEntries       StockEntry[]
+  stockOuts          StockOut[]
+}
+
+model ProjectAllocation {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int      // Reserved quantity
+  status    String   @default("PENDING") // PENDING, DISPATCHED, RETURNED
+  createdAt DateTime @default(now())
+}
+
+model StockEntry {
+  id            String    @id @default(uuid())
+  entryDate     DateTime  @default(now())
+  invoiceNumber String
+  supplierId    String
+  supplier      Supplier  @relation(fields: [supplierId], references: [id])
+  projectId     String?
+  project       Project?  @relation(fields: [projectId], references: [id])
+  productId     String
+  product       Product   @relation(fields: [productId], references: [id])
+  quantity      Int
+  batchNumber   String?
+  mfgDate       DateTime?
+  receivedById  String
+  receivedBy    User      @relation("ReceivedBy", fields: [receivedById], references: [id])
+  warehouseId   String
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+  rackId        String
+  rack          Rack      @relation(fields: [rackId], references: [id])
+  positionId    String
+  position      Position  @relation(fields: [positionId], references: [id])
+  shelfNumber   String
+  
+  // Package specifics
+  width         Float?
+  height        Float?
+  length        Float?
+  weight        Float?
+  productImage  String?
+  notes         String?
+}
+
+model StockOut {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+  issuedToId  String
+  issuedTo    User     @relation("IssuedTo", fields: [issuedToId], references: [id])
+  employeeId  String
+  employee    User     @relation("EmployeeLogger", fields: [employeeId], references: [id])
+  date        DateTime @default(now())
+  purpose     String
+  remarks     String?
+}
+
+model ProductMovement {
+  id          String         @id @default(uuid())
+  timestamp   DateTime       @default(now())
+  action      MovementAction
+  productId   String
+  product     Product        @relation(fields: [productId], references: [id])
+  userId      String
+  user        User           @relation(fields: [userId], references: [id])
+  warehouseId String
+  warehouse   Warehouse      @relation(fields: [warehouseId], references: [id])
+  rackId      String
+  rack        Rack           @relation(fields: [rackId], references: [id])
+  quantity    Int
+  remarks     String?
+}
+
+model DamagedInventory {
+  id         String   @id @default(uuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  reason     String
+  images     String[]
+  employeeId String
+  employee   User     @relation(fields: [employeeId], references: [id])
+  date       DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  timestamp DateTime @default(now())
+  ipAddress String?
+  browser   String?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // LOW_STOCK, OUT_OF_STOCK, WAREHOUSE_FULL, etc.
+  message   String
+  isRead    Boolean  @default(false)
+  timestamp DateTime @default(now())
+}
