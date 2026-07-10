@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, ArrowRight, CheckCircle, Camera } from 'lucide-react'; // 1. Added Camera icon
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, ArrowRight, CheckCircle, Camera } from 'lucide-react';
 import axios from 'axios';
 
 export default function StockEntry() {
@@ -14,6 +14,31 @@ export default function StockEntry() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [selectedSku, setSelectedSku] = useState('');
+  const [batchNumber, setBatchNumber] = useState('');
+
+  // Products state for dropdown
+  const [products, setProducts] = useState<any[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchProducts = async () => {
+    try {
+      const res = await axios.get('/api/products');
+      setProducts(res.data);
+      if (res.data.length > 0) {
+        setSelectedSku(res.data[0].sku);
+      }
+    } catch (err) {
+      console.error('Failed to fetch products', err);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -36,6 +61,17 @@ export default function StockEntry() {
         setInvoiceNumber(response.data.invoiceNumber || '');
         setSupplierName(response.data.supplierName || '');
         setQuantity(response.data.quantity || 1);
+        
+        // Attempt to find and match product by name returned by OCR
+        if (response.data.productName) {
+          const matched = products.find(p => 
+            p.name.toLowerCase().includes(response.data.productName.toLowerCase()) || 
+            response.data.productName.toLowerCase().includes(p.name.toLowerCase())
+          );
+          if (matched) {
+            setSelectedSku(matched.sku);
+          }
+        }
       }
     } catch (err) {
       console.error(err);
@@ -45,13 +81,40 @@ export default function StockEntry() {
     }
   };
 
+  const handleLogStockArrival = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSku) {
+      alert('Please select a product SKU first.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await axios.post('/api/products/adjust-stock', {
+        sku: selectedSku,
+        quantity,
+        action: 'INBOUND'
+      });
+      alert('Stock arrival logged successfully! Stock levels updated and public site cache revalidated.');
+      // Reset form fields
+      setInvoiceNumber('');
+      setSupplierName('');
+      setQuantity(1);
+      setBatchNumber('');
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to log stock arrival: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Upload Zone & Scanner */}
       <div className="lg:col-span-1 bg-white border border-psr-border rounded-xl p-6 shadow-sm space-y-4">
         <h3 className="font-heading font-semibold text-base pb-3 border-b border-psr-border">Invoice OCR Scanner</h3>
 
-        {/* Drag & drop mock layout */}
+        {/* Drag & drop file input */}
         <div className="border-2 border-dashed border-psr-border hover:border-psr-red rounded-xl p-6 text-center cursor-pointer transition-colors relative">
           <input
             type="file"
@@ -72,7 +135,7 @@ export default function StockEntry() {
           ref={cameraInputRef}
           onChange={handleFileChange}
           accept="image/*"
-          capture="environment" // Forces native rear-facing camera on mobile
+          capture="environment"
           className="hidden"
         />
 
@@ -116,26 +179,49 @@ export default function StockEntry() {
       <div className="lg:col-span-2 bg-white border border-psr-border rounded-xl p-6 shadow-sm">
         <h3 className="font-heading font-semibold text-base pb-4 border-b border-psr-border">Inbound Receipt Registry</h3>
 
-        <form className="mt-6 space-y-4">
-          {/* Form fields same as before... */}
+        <form onSubmit={handleLogStockArrival} className="mt-6 space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Select Product SKU</label>
+            <select
+              required
+              value={selectedSku}
+              onChange={(e) => setSelectedSku(e.target.value)}
+              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+            >
+              {isLoadingProducts ? (
+                <option value="">Loading products...</option>
+              ) : products.length === 0 ? (
+                <option value="">No products registered. Create one in Products page first.</option>
+              ) : (
+                products.map((prod) => (
+                  <option key={prod.id} value={prod.sku}>
+                    {prod.sku} — {prod.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Invoice Number</label>
               <input
+                required
                 type="text"
                 value={invoiceNumber}
                 onChange={(e) => setInvoiceNumber(e.target.value)}
-                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
                 placeholder="INV-2026-981"
               />
             </div>
             <div>
               <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Supplier Name</label>
               <input
+                required
                 type="text"
                 value={supplierName}
                 onChange={(e) => setSupplierName(e.target.value)}
-                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
                 placeholder="e.g. Atlas Copco Ltd."
               />
             </div>
@@ -145,10 +231,12 @@ export default function StockEntry() {
             <div>
               <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Product Quantity</label>
               <input
+                required
                 type="number"
+                min={1}
                 value={quantity}
                 onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
               />
             </div>
             <div>
@@ -163,7 +251,9 @@ export default function StockEntry() {
               <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Batch / Lot No</label>
               <input
                 type="text"
-                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={batchNumber}
+                onChange={(e) => setBatchNumber(e.target.value)}
+                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
                 placeholder="BAT-998"
               />
             </div>
@@ -171,10 +261,11 @@ export default function StockEntry() {
 
           <div className="pt-6 border-t border-psr-border flex justify-end">
             <button
-              type="button"
+              type="submit"
+              disabled={isSubmitting}
               className="px-6 py-2.5 rounded-lg bg-psr-red hover:bg-psr-darkRed text-white text-sm font-semibold shadow-sm transition-all"
             >
-              Log Stock Arrival
+              {isSubmitting ? 'Logging...' : 'Log Stock Arrival'}
             </button>
           </div>
         </form>

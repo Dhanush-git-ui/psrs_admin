@@ -1,15 +1,28 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { OpenAI } from 'openai';
 
-const prisma = new PrismaClient();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { z } from 'zod';
 
+const prisma = new PrismaClient();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key' });
+
+const aiSearchSchema = z.object({
+  query: z.string().min(1, 'Query is required').max(1000, 'Query must be under 1000 characters'),
+});
 
 export const handleSmartSearch = async (req: Request, res: Response) => {
-  const { query } = req.body; // e.g. "Find button bits with quantity less than 20 in warehouse A"
+  const validation = aiSearchSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: validation.error.flatten().fieldErrors });
+  }
+
+  const { query } = validation.data;
   
-  
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(400).json({ error: 'OPENAI_API_KEY is not configured in the environment' });
+  }
+
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4-turbo',
@@ -33,7 +46,7 @@ export const handleSmartSearch = async (req: Request, res: Response) => {
     const parsedFilter = JSON.parse(response.choices[0].message.content || '{}');
     
     // Construct database query based on LLM output
-    let results = await prisma.product.findMany({
+    const results = await prisma.product.findMany({
       where: {
         AND: [
           parsedFilter.textSearch ? {
@@ -45,7 +58,9 @@ export const handleSmartSearch = async (req: Request, res: Response) => {
           parsedFilter.categoryName ? {
             category: { name: { contains: parsedFilter.categoryName, mode: 'insensitive' } }
           } : {},
-          
+          parsedFilter.lowStockOnly ? {
+            currentStock: { lt: prisma.product.fields.minStock }
+          } : {},
           parsedFilter.warehouseName || parsedFilter.rackName ? {
             stockLocations: {
               some: {
@@ -66,9 +81,6 @@ export const handleSmartSearch = async (req: Request, res: Response) => {
       }
     });
 
-    if (parsedFilter.lowStockOnly) {
-      results = results.filter(product => product.currentStock < product.minStock);
-    }
     return res.json({ filters: parsedFilter, results });
   } catch (error: any) {
     return res.status(500).json({ error: error.message });

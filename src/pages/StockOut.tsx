@@ -1,6 +1,6 @@
-// client/src/pages/StockOut.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowDownLeft, AlertCircle } from 'lucide-react';
+import axios from 'axios';
 
 export default function StockOut() {
   const [formData, setFormData] = useState({
@@ -11,9 +11,53 @@ export default function StockOut() {
     remarks: '',
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [products, setProducts] = useState<any[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchProducts = async () => {
+    try {
+      const res = await axios.get('/api/products');
+      setProducts(res.data);
+    } catch (err) {
+      console.error('Failed to fetch products', err);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Stock removal entry logged successfully!');
+    if (!formData.sku) {
+      alert('Please choose a product SKU first.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await axios.post('/api/products/adjust-stock', {
+        sku: formData.sku,
+        quantity: formData.quantity,
+        action: 'OUTBOUND'
+      });
+      alert('Stock removal entry logged successfully! Stock levels updated and public site cache revalidated.');
+      // Reset form fields
+      setFormData({
+        sku: '',
+        quantity: 1,
+        projectCode: '',
+        purpose: 'Assigned to Project Site',
+        remarks: '',
+      });
+    } catch (err: any) {
+      console.error(err);
+      alert('Failed to log stock release: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -27,14 +71,23 @@ export default function StockOut() {
           <div>
             <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Select Product SKU</label>
             <select
+              required
               value={formData.sku}
               onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
               className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
             >
               <option value="">-- Choose Item --</option>
-              <option value="PSR-BT-32">PSR-BT-32 (Button Drill Bit 32mm)</option>
-              <option value="PSR-RM-102">PSR-RM-102 (Drifter Rotation Motor)</option>
-              <option value="PSR-SK-05">PSR-SK-05 (Water Swivel Seal Kit)</option>
+              {isLoadingProducts ? (
+                <option value="">Loading products...</option>
+              ) : products.length === 0 ? (
+                <option value="">No products registered. Create one in Products page first.</option>
+              ) : (
+                products.map((prod) => (
+                  <option key={prod.id} value={prod.sku}>
+                    {prod.sku} — {prod.name}
+                  </option>
+                ))
+              )}
             </select>
           </div>
           <div>
@@ -45,7 +98,7 @@ export default function StockOut() {
               min={1}
               value={formData.quantity}
               onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
-              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
             />
           </div>
         </div>
@@ -58,7 +111,7 @@ export default function StockOut() {
               type="text"
               value={formData.projectCode}
               onChange={(e) => setFormData({ ...formData, projectCode: e.target.value })}
-              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none"
+              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-psr-red"
               placeholder="e.g. PRJ-METRO-09"
             />
           </div>
@@ -67,7 +120,7 @@ export default function StockOut() {
             <select
               value={formData.purpose}
               onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white focus:border-psr-red"
             >
               <option>Assigned to Project Site</option>
               <option>Transferred to Warehouse B</option>
@@ -82,7 +135,7 @@ export default function StockOut() {
           <textarea
             value={formData.remarks}
             onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-            className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none h-24"
+            className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none h-24 focus:border-psr-red"
             placeholder="Log engineer names or extra dispatch parameters..."
           ></textarea>
         </div>
@@ -97,9 +150,10 @@ export default function StockOut() {
         <div className="pt-6 border-t border-psr-border flex justify-end">
           <button
             type="submit"
+            disabled={isSubmitting}
             className="px-6 py-2.5 rounded-lg bg-psr-red hover:bg-psr-darkRed text-white text-sm font-semibold shadow-sm transition-all"
           >
-            Release Stock Inventory
+            {isSubmitting ? 'Releasing...' : 'Release Stock Inventory'}
           </button>
         </div>
       </form>

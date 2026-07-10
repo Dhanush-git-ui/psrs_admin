@@ -1,11 +1,12 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import QRCode from 'qrcode';
 import bwipjs from 'bwip-js';
 
 // Generate QR Code URL directing to the product page on the mobile/web application
 export const getProductQRCode = async (req: Request, res: Response) => {
   const { productId } = req.params;
-  const productUrl = `${process.env.FRONTEND_URL}/inventory/${productId}`;
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const productUrl = `${frontendUrl}/inventory/${productId}`;
   
   try {
     const qrDataUrl = await QRCode.toDataURL(productUrl, {
@@ -29,7 +30,7 @@ export const getProductBarcode = async (req: Request, res: Response) => {
   try {
     const pngBuffer = await bwipjs.toBuffer({
       bcid: 'code128',
-      text: sku,
+      text: sku as string,
       scale: 3,
       height: 10,
       includetext: true,

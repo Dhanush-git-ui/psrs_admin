@@ -102,6 +102,13 @@ model Product {
   reservedStock      Int                @default(0)
   status             ProductStatus      @default(AVAILABLE)
   
+  costPrice          Float              @default(0.0)
+  sellingPrice       Float              @default(0.0)
+  currency           String             @default("USD")
+  subCategory        String             @default("")
+  
+  isActive           Boolean            @default(true)
+  
   // Document links
   images             String[]           // Array of image URLs (Cloudinary/S3)
   technicalDrawing   String?
@@ -121,6 +128,7 @@ model Product {
   projectAllocations ProjectAllocation[]
   damagedRecords     DamagedInventory[]
   movements          ProductMovement[]
+  stockMovements     StockMovement[]
 }
 
 model Warehouse {
@@ -219,7 +227,7 @@ model StockEntry {
   projectId     String?
   project       Project?  @relation(fields: [projectId], references: [id])
   productId     String
-  product       Product   @relation(fields: [productId], references: [id])
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity      Int
   batchNumber   String?
   mfgDate       DateTime?
@@ -245,7 +253,7 @@ model StockEntry {
 model StockOut {
   id          String   @id @default(uuid())
   productId   String
-  product     Product  @relation(fields: [productId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity    Int
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id])
@@ -263,7 +271,7 @@ model ProductMovement {
   timestamp   DateTime       @default(now())
   action      MovementAction
   productId   String
-  product     Product        @relation(fields: [productId], references: [id])
+  product     Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
   userId      String
   user        User           @relation(fields: [userId], references: [id])
   warehouseId String
@@ -277,7 +285,7 @@ model ProductMovement {
 model DamagedInventory {
   id         String   @id @default(uuid())
   productId  String
-  product    Product  @relation(fields: [productId], references: [id])
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   quantity   Int
   reason     String
   images     String[]
@@ -302,4 +310,31 @@ model Notification {
   message   String
   isRead    Boolean  @default(false)
   timestamp DateTime @default(now())
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  action    String   // "INBOUND" | "OUTBOUND"
+  quantity  Int
+  userId    String   // Clerk user ID from req.auth
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
+model Quotation {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  company   String
+  phone     String
+  country   String
+  port      String
+  urgency   String
+  message   String?
+  items     Json     // array of objects: { productId, name, category, quantity, specs }
+  status    String   @default("PENDING") // PENDING, REVIEWED, APPROVED, REJECTED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

@@ -1,13 +1,22 @@
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { createWorker } from 'tesseract.js';
 import OpenAI from 'openai';
 
-
-const openai = new OpenAI();
+// Use dummy key if not configured in environment to prevent immediate startup crash
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key' });
 
 export const scanInvoice = async (req: Request, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Invoice file is required' });
+  }
+
+  const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf'];
+  if (!allowedMimeTypes.includes(req.file.mimetype)) {
+    return res.status(400).json({ error: 'Only PNG, JPEG, JPG, and PDF files are allowed.' });
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(400).json({ error: 'OPENAI_API_KEY is not configured in the environment' });
   }
 
   try {

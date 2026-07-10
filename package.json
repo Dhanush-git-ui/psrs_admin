@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.js",
+    "api": "npx tsx api/server.ts",
     "build": "prisma generate && vite build",
     "postinstall": "prisma generate",
     "lint": "eslint .",
@@ -12,6 +13,7 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.8",
+    "@clerk/express": "^2.1.37",
     "@clerk/react": "^6.11.4",
     "@prisma/client": "^6.2.1",
     "@radix-ui/react-dialog": "^1.1.18",
@@ -21,6 +23,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "framer-motion": "^12.42.2",
     "gsap": "^3.15.0",
     "lucide-react": "^1.23.0",
@@ -31,14 +34,18 @@
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
     "tailwind-merge": "^3.6.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/postcss": "^4.3.2",
+    "@types/bwip-js": "^3.2.3",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.2.0",
     "@types/node": "^24.13.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",

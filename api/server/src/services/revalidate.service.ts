@@ -32,4 +32,4 @@ export const triggerMainSiteRevalidate = async (productId: string) => {
   } catch (error: any) {
     console.error(`[Revalidate Error] Failed to invalidate main website cache:`, error.response?.data || error.message);
   }
-}
+};
