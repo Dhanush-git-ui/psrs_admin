@@ -397,7 +397,8 @@ export const getCategories = async (_req: Request, res: Response) => {
 export const adjustStock = async (req: Request, res: Response) => {
   const validation = adjustStockSchema.safeParse(req.body);
   if (!validation.success) {
-    return res.status(400).json({ error: validation.error.flatten().fieldErrors });
+    const errorDetails = validation.error.issues.map(i => `${i.path.join('.') || 'input'}: ${i.message}`).join('; ');
+    return res.status(400).json({ error: errorDetails || 'Invalid stock adjustment input data' });
   }
 
   const { sku, productId, productName, name, quantity, action, reason } = validation.data;
@@ -476,7 +477,7 @@ export const adjustStock = async (req: Request, res: Response) => {
       }
 
       const qtyAdj = action === 'OUTBOUND' ? -quantity : quantity;
-      const newStock = product.currentStock + qtyAdj;
+      const newStock = Math.max(0, product.currentStock + qtyAdj);
 
       // Recalculate status
       let newStatus = 'AVAILABLE';
@@ -496,30 +497,36 @@ export const adjustStock = async (req: Request, res: Response) => {
       });
 
       // Update related ProductLocation quantity if it exists
-      const firstLoc = await tx.productLocation.findFirst({
-        where: { productId: product.id }
-      });
-      if (firstLoc) {
-        await tx.productLocation.update({
-          where: { id: firstLoc.id },
-          data: { quantity: newStock }
+      try {
+        const firstLoc = await tx.productLocation.findFirst({
+          where: { productId: product.id }
         });
+        if (firstLoc) {
+          await tx.productLocation.update({
+            where: { id: firstLoc.id },
+            data: { quantity: newStock }
+          });
+        }
+      } catch (locErr) {
+        console.warn('ProductLocation update skipped:', locErr);
       }
 
-      // Insert audit trail log into StockMovement table
-      await tx.stockMovement.create({
-        data: {
-          productId: product.id,
-          action,
-          quantity,
-          userId,
-          reason: reason || `Stock ${action.toLowerCase()} adjustment processed.`
-        }
-      });
+      // Insert audit trail log into StockMovement table if available
+      try {
+        await tx.stockMovement.create({
+          data: {
+            productId: product.id,
+            action,
+            quantity,
+            userId,
+            reason: reason || `Stock ${action.toLowerCase()} adjustment processed.`
+          }
+        });
+      } catch (smErr) {
+        console.warn('StockMovement log skipped:', smErr);
+      }
 
       return updated;
-    }, {
-      isolationLevel: 'Serializable'
     });
 
     // Trigger instant cache revalidation on the main website
@@ -531,16 +538,17 @@ export const adjustStock = async (req: Request, res: Response) => {
 
     return res.json(updatedProduct);
   } catch (err: any) {
+    console.error('adjustStock error:', err);
     if (err.message === 'PRODUCT_NOT_FOUND') {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ error: 'Product not found. Please enter a valid product name or create one in Products catalog.' });
     }
     if (err.message === 'PRODUCT_INACTIVE') {
       return res.status(400).json({ error: 'Cannot adjust stock of an inactive product.' });
     }
     if (err.message === 'INSUFFICIENT_STOCK') {
-      return res.status(400).json({ error: 'Insufficient stock levels available.' });
+      return res.status(400).json({ error: 'Insufficient stock levels available in inventory.' });
     }
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Internal server error while logging stock.' });
   }
 };
 

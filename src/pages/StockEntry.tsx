@@ -118,8 +118,22 @@ export default function StockEntry() {
       setBatchNumber('');
       fetchProducts();
     } catch (err: any) {
-      console.error(err);
-      alert('Failed to log stock arrival: ' + (err.response?.data?.error || err.message));
+      console.error('Stock arrival error:', err);
+      let errorMsg = 'Failed to log stock arrival.';
+      if (err.response?.data) {
+        const d = err.response.data;
+        if (typeof d.error === 'string') {
+          errorMsg = d.error;
+        } else if (typeof d.error === 'object' && d.error !== null) {
+          const msgs = Object.values(d.error).flat().filter(Boolean);
+          errorMsg = msgs.join(', ') || JSON.stringify(d.error);
+        } else if (typeof d.message === 'string') {
+          errorMsg = d.message;
+        }
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+      alert('Failed to log stock arrival: ' + errorMsg);
     } finally {
       setIsSubmitting(false);
     }
