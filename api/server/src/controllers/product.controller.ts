@@ -489,3 +489,26 @@ export const adjustStock = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message });
   }
 };
+
+export const getWarehouses = async (_req: Request, res: Response) => {
+  try {
+    const warehouses = await prisma.warehouse.findMany({
+      include: {
+        racks: {
+          include: {
+            positions: true,
+            stockLocations: {
+              include: {
+                product: true
+              }
+            }
+          }
+        }
+      }
+    });
+    return res.json(warehouses);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+};
+

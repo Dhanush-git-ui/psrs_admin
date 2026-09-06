@@ -18,6 +18,7 @@ import {
   getProducts, 
   getInventory, 
   getCategories, 
+  getWarehouses,
   adjustStock 
 } from './server/src/controllers/product.controller';
 import { getProductQRCode, getProductBarcode } from './server/src/controllers/code.controller';
@@ -156,6 +157,7 @@ app.patch('/api/quotations/:id', updateQuotationStatus);
 app.get('/api/products', getProducts);
 app.get('/api/inventory', getInventory);
 app.get('/api/categories', getCategories);
+app.get('/api/warehouses', getWarehouses);
 app.get('/api/products/:productId/qrcode', getProductQRCode);
 app.get('/api/products/:sku/barcode', getProductBarcode);
 

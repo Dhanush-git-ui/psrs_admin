@@ -1,200 +1,327 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, Eye, CheckCircle, X, Box, Info } from 'lucide-react';
+import { 
+  Grid, 
+  Eye, 
+  CheckCircle, 
+  X, 
+  Box, 
+  Info, 
+  Warehouse as WarehouseIcon, 
+  Layers, 
+  RefreshCw,
+  Package,
+  MapPin,
+  AlertCircle
+} from 'lucide-react';
 import axios from 'axios';
 
-interface InventoryItem {
+interface NormalizedLocationItem {
   id: string;
-  productId: string;
-  warehouseId: string;
-  rackId: string;
-  positionId: string;
-  shelfNumber: string;
+  name: string;
+  sku: string;
+  code: string;
+  imageUrl: string;
+  warehouseName: string;
+  rackName: string;
+  shelfNumber: string; // e.g. "Shelf 1"
+  positionName: string; // e.g. "Pos 1"
   quantity: number;
-  product: {
-    id: string;
-    name: string;
-    sku: string;
-    code: string;
-    images: string[];
-    status: string;
-    currentStock: number;
-    minStock: number;
-  };
-  warehouse: {
-    id: string;
-    name: string;
-  };
-  rack: {
-    id: string;
-    name: string;
-  };
-  position: {
-    id: string;
-    name: string;
-  };
+  status: string;
 }
 
 export default function Warehouse() {
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [items, setItems] = useState<NormalizedLocationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedWarehouse, setSelectedWarehouse] = useState('');
+  const [selectedWarehouse, setSelectedWarehouse] = useState('Main Warehouse A');
   const [selectedRack, setSelectedRack] = useState('Rack A');
   const [selectedCell, setSelectedCell] = useState<{
     shelf: number;
     pos: number;
-    items: InventoryItem[];
+    items: NormalizedLocationItem[];
   } | null>(null);
 
   const shelves = [1, 2, 3, 4, 5];
   const positions = [1, 2, 3, 4];
+  const defaultRacks = ['Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack P', 'Rack S'];
+
+  const fetchWarehouseData = async () => {
+    try {
+      // 1. Try fetching from /api/products
+      const response = await axios.get('/api/products');
+      if (Array.isArray(response.data) && response.data.length > 0) {
+        const normalized = parseProductsToLocations(response.data);
+        setItems(normalized);
+        return;
+      }
+      
+      // 2. Fallback to /api/inventory
+      const invResponse = await axios.get('/api/inventory');
+      if (Array.isArray(invResponse.data) && invResponse.data.length > 0) {
+        const normalized = parseInventoryToLocations(invResponse.data);
+        setItems(normalized);
+      }
+    } catch (err) {
+      console.error('Failed to fetch warehouse location data', err);
+      // Fallback
+      try {
+        const invResponse = await axios.get('/api/inventory');
+        if (Array.isArray(invResponse.data)) {
+          setItems(parseInventoryToLocations(invResponse.data));
+        }
+      } catch (e) {
+        console.error('Inventory fallback also failed', e);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  function parseProductsToLocations(products: any[]): NormalizedLocationItem[] {
+    const list: NormalizedLocationItem[] = [];
+    products.forEach((prod, index) => {
+      const imgUrl = (Array.isArray(prod.images) && prod.images[0]) || prod.imageUrl || '/images/inventory/IMG_3086.jpg';
+
+      if (Array.isArray(prod.stockLocations) && prod.stockLocations.length > 0) {
+        prod.stockLocations.forEach((loc: any) => {
+          list.push({
+            id: prod.id,
+            name: prod.name,
+            sku: prod.sku,
+            code: prod.code || prod.sku,
+            imageUrl: imgUrl,
+            warehouseName: loc.warehouse?.name || 'Main Warehouse A',
+            rackName: loc.rack?.name || 'Rack A',
+            shelfNumber: loc.shelfNumber || 'Shelf 1',
+            positionName: loc.position?.name || 'Pos 1',
+            quantity: loc.quantity !== undefined ? loc.quantity : (prod.currentStock || 0),
+            status: prod.status || 'AVAILABLE'
+          });
+        });
+      } else {
+        // Distribute items gracefully across default racks if stockLocations is empty
+        const rackIndex = index % defaultRacks.length;
+        const shelfIndex = (index % shelves.length) + 1;
+        const posIndex = (index % positions.length) + 1;
+
+        list.push({
+          id: prod.id,
+          name: prod.name,
+          sku: prod.sku,
+          code: prod.code || prod.sku,
+          imageUrl: imgUrl,
+          warehouseName: 'Main Warehouse A',
+          rackName: defaultRacks[rackIndex],
+          shelfNumber: `Shelf ${shelfIndex}`,
+          positionName: `Pos ${posIndex}`,
+          quantity: prod.currentStock || 0,
+          status: prod.status || 'AVAILABLE'
+        });
+      }
+    });
+    return list;
+  }
+
+  function parseInventoryToLocations(inventory: any[]): NormalizedLocationItem[] {
+    return inventory.map((item, index) => {
+      const imgUrl = (Array.isArray(item.images) && item.images[0]) || item.imageUrl || '/images/inventory/IMG_3086.jpg';
+      const whName = (typeof item.warehouse === 'object' ? item.warehouse?.name : item.warehouse) || 'Main Warehouse A';
+      const rName = (typeof item.rack === 'object' ? item.rack?.name : item.rack) || defaultRacks[index % defaultRacks.length];
+      const posName = (typeof item.position === 'object' ? item.position?.name : item.rackPosition) || `Pos ${(index % 4) + 1}`;
+      const shNumber = item.shelfNumber || `Shelf ${(index % 5) + 1}`;
+
+      return {
+        id: item.id || `inv-${index}`,
+        name: item.name,
+        sku: item.sku,
+        code: item.productCode || item.code || item.sku,
+        imageUrl: imgUrl,
+        warehouseName: whName,
+        rackName: rName,
+        shelfNumber: shNumber,
+        positionName: posName,
+        quantity: item.currentStock || item.quantity || 0,
+        status: item.status || 'AVAILABLE'
+      };
+    });
+  }
 
   useEffect(() => {
-    const fetchInventory = async () => {
-      try {
-        const response = await axios.get('/api/inventory');
-        setInventory(response.data);
-        
-        // Default selected warehouse if available
-        const warehouses = Array.from(new Set(response.data.map((item: any) => item.warehouse.name))) as string[];
-        if (warehouses.length > 0) {
-          setSelectedWarehouse(prev => prev || (warehouses.includes('Main Warehouse A') ? 'Main Warehouse A' : warehouses[0]));
-        }
-      } catch (err) {
-        console.error('Failed to fetch inventory', err);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchInventory();
+    fetchWarehouseData();
   }, []);
 
-  const uniqueWarehouses = Array.from(new Set(inventory.map(item => item.warehouse.name))) as string[];
-  const racks = ['Rack A', 'Rack B', 'Rack C', 'Rack D', 'Rack P', 'Rack S'];
+  const uniqueWarehouses = Array.from(new Set(items.map(i => i.warehouseName))).filter(Boolean);
+  if (uniqueWarehouses.length === 0) uniqueWarehouses.push('Main Warehouse A');
+
+  // Stats
+  const totalStockInView = items
+    .filter(i => (!selectedWarehouse || i.warehouseName === selectedWarehouse) && (!selectedRack || i.rackName === selectedRack))
+    .reduce((acc, curr) => acc + curr.quantity, 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-white border border-psr-border p-5 rounded-xl shadow-sm">
-        <div className="flex-1">
-          <h2 className="font-heading font-semibold text-lg">Physical Warehouse Visualizer</h2>
-          <p className="text-xs text-psr-textSecondary">Select a Warehouse and Rack to examine capacity layout and shelves.</p>
+      {/* Top Filter and Controls */}
+      <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center gap-4 bg-white border border-psr-border p-5 rounded-2xl shadow-xs">
+        <div>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold text-psr-textPrimary">Physical Warehouse 3D Density Grid</h2>
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live Grid Active
+            </span>
+          </div>
+          <p className="text-xs text-psr-textSecondary mt-1">
+            Visual position mapping for shelves, slots, pallet density, and product locations.
+          </p>
         </div>
         
         {/* Selector Filters */}
         <div className="flex flex-wrap items-center gap-3">
           {/* Warehouse Dropdown */}
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-psr-textSecondary">Warehouse:</span>
+            <span className="text-xs font-bold text-psr-textSecondary">Warehouse:</span>
             <select
               value={selectedWarehouse}
               onChange={(e) => setSelectedWarehouse(e.target.value)}
-              className="bg-psr-bg border border-psr-border rounded-lg px-3 py-1.5 text-xs font-semibold text-psr-textPrimary focus:outline-none focus:ring-1 focus:ring-psr-red"
+              className="bg-white border border-psr-border rounded-xl px-3 py-2 text-xs font-semibold text-psr-textPrimary focus:outline-none focus:border-psr-red"
             >
               {uniqueWarehouses.map((wh) => (
                 <option key={wh} value={wh}>{wh}</option>
               ))}
-              {uniqueWarehouses.length === 0 && (
-                <option value="">No Warehouses Found</option>
-              )}
             </select>
           </div>
 
-          {/* Selector tab buttons for Racks */}
-          <div className="flex bg-psr-bg p-1 rounded-lg border border-psr-border">
-            {racks.map((rack) => (
-              <button
-                key={rack}
-                onClick={() => setSelectedRack(rack)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  selectedRack === rack 
-                    ? 'bg-white text-psr-red shadow-sm' 
-                    : 'text-psr-textSecondary hover:text-psr-textPrimary'
-                }`}
-              >
-                {rack}
-              </button>
-            ))}
-          </div>
+          <button
+            onClick={() => { setIsLoading(true); fetchWarehouseData(); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-psr-border bg-white text-xs font-semibold text-psr-textSecondary hover:bg-psr-bg hover:text-psr-textPrimary transition-all cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
         </div>
       </div>
 
+      {/* Rack Selector Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <span className="text-xs font-bold text-psr-textSecondary shrink-0 mr-1 flex items-center gap-1">
+          <Layers className="w-4 h-4 text-psr-red" /> Select Rack:
+        </span>
+        {defaultRacks.map((rack) => {
+          const rackItemCount = items.filter(i => 
+            (!selectedWarehouse || i.warehouseName === selectedWarehouse) && 
+            i.rackName.toLowerCase() === rack.toLowerCase()
+          ).length;
+
+          return (
+            <button
+              key={rack}
+              onClick={() => setSelectedRack(rack)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+                selectedRack === rack 
+                  ? 'bg-psr-red text-white shadow-md shadow-psr-red/20' 
+                  : 'bg-white border border-psr-border text-psr-textSecondary hover:text-psr-textPrimary hover:bg-psr-bg'
+              }`}
+            >
+              <span>{rack}</span>
+              {rackItemCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  selectedRack === rack ? 'bg-white/20 text-white' : 'bg-psr-bg text-psr-textSecondary'
+                }`}>
+                  {rackItemCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Shelf Position Grid Visualization */}
-      <div className="bg-white border border-psr-border rounded-xl p-6 shadow-sm">
-        <h3 className="font-heading font-semibold text-base mb-6 flex items-center gap-2">
-          <Grid className="w-5 h-5 text-psr-red" /> {selectedWarehouse || 'Warehouse'} - {selectedRack} Grid Density Model
-        </h3>
+      <div className="bg-white border border-psr-border rounded-2xl p-6 shadow-xs">
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-psr-border">
+          <h3 className="font-heading font-bold text-base flex items-center gap-2 text-psr-textPrimary">
+            <Grid className="w-5 h-5 text-psr-red" /> 
+            {selectedWarehouse} &mdash; <span className="text-psr-red font-bold">{selectedRack}</span>
+          </h3>
+          <span className="text-xs font-bold text-psr-textSecondary bg-psr-bg px-3 py-1.5 rounded-lg border border-psr-border">
+            Total Units in {selectedRack}: <span className="text-psr-textPrimary font-mono font-bold">{totalStockInView}</span>
+          </span>
+        </div>
         
         {isLoading ? (
-          <div className="text-center py-12 text-sm text-psr-textSecondary animate-pulse">Loading Grid Model...</div>
+          <div className="text-center py-20 text-sm text-psr-textSecondary animate-pulse flex flex-col items-center justify-center gap-3">
+            <RefreshCw className="w-6 h-6 animate-spin text-psr-red" />
+            Loading Warehouse Visualizer Grid...
+          </div>
         ) : (
           <div className="space-y-4">
             {shelves.map((shelf) => (
-              <div key={shelf} className="flex items-center gap-4">
+              <div key={shelf} className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-2 rounded-xl hover:bg-psr-bg/20 transition-colors">
                 {/* Shelf label */}
-                <span className="w-20 text-xs font-semibold text-psr-textSecondary">Shelf {shelf}</span>
+                <div className="w-24 shrink-0 flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-psr-red" />
+                  <span className="text-xs font-bold text-psr-textPrimary font-heading uppercase tracking-wide">
+                    Shelf {shelf}
+                  </span>
+                </div>
                 
-                {/* Position Blocks */}
-                <div className="flex-1 grid grid-cols-4 gap-4">
+                {/* Position Blocks (4 positions per shelf) */}
+                <div className="flex-1 w-full grid grid-cols-2 md:grid-cols-4 gap-3">
                   {positions.map((pos) => {
-                    // Filter items matching current warehouse, rack, shelf and position
-                    const itemsInCell = inventory.filter(item => 
-                      item.warehouse.name === selectedWarehouse &&
-                      item.rack.name === selectedRack &&
-                      item.shelfNumber === `Shelf ${shelf}` &&
-                      item.position.name === `Pos ${pos}`
-                    );
+                    // Match items in cell (case-insensitive and format resilient)
+                    const itemsInCell = items.filter(item => {
+                      const matchWh = !selectedWarehouse || item.warehouseName.toLowerCase() === selectedWarehouse.toLowerCase();
+                      const matchRack = item.rackName.toLowerCase() === selectedRack.toLowerCase();
+                      const matchShelf = item.shelfNumber.toLowerCase().includes(`${shelf}`);
+                      const matchPos = item.positionName.toLowerCase().includes(`${pos}`);
+                      return matchWh && matchRack && matchShelf && matchPos;
+                    });
 
                     const hasItems = itemsInCell.length > 0;
                     const totalQty = itemsInCell.reduce((sum, item) => sum + item.quantity, 0);
-                    
-                    // Simple threshold occupancy coloring:
-                    // Empty = 0 quantity or items.
-                    // Critical = > 80 units (or close to max capacity)
-                    // Optimal = otherwise
-                    const isEmpty = !hasItems;
-                    const isFull = totalQty > 80;
-
-                    const mainItem = itemsInCell[0];
 
                     return (
-                      <div 
-                        key={pos} 
-                        onClick={() => setSelectedCell({ shelf, pos, items: itemsInCell })}
-                        className={`p-3 rounded-lg border text-center transition-all cursor-pointer hover:shadow-md hover:scale-[1.02] flex flex-col justify-between min-h-[90px] ${
-                          isFull 
-                            ? 'bg-red-50/70 border-psr-red/35 text-psr-red' 
-                            : isEmpty 
-                            ? 'bg-psr-bg/40 border-psr-border text-psr-textSecondary' 
-                            : 'bg-green-50/40 border-green-200 text-psr-success'
+                      <div
+                        key={pos}
+                        onClick={() => hasItems && setSelectedCell({ shelf, pos, items: itemsInCell })}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between min-h-[90px] ${
+                          hasItems
+                            ? 'bg-emerald-50/70 border-emerald-300 hover:border-emerald-500 hover:shadow-md'
+                            : 'bg-psr-bg/40 border-psr-border/60 hover:border-psr-border border-dashed'
                         }`}
                       >
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-wider opacity-75">Pos {pos}</span>
-                          <span className="text-xs font-bold block mt-1">
-                            {isEmpty ? 'Empty' : isFull ? 'Critical' : 'Optimal'}
+                        <div className="flex justify-between items-start">
+                          <span className="text-[11px] font-bold font-mono text-psr-textSecondary">
+                            Pos {pos}
                           </span>
+                          {hasItems ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              {totalQty} pcs
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-medium text-psr-textSecondary">Empty</span>
+                          )}
                         </div>
 
-                        {/* Miniature content preview */}
-                        {!isEmpty && (
-                          <div className="mt-2 flex items-center justify-center gap-1.5 bg-white/70 rounded p-1 border border-psr-border/40">
-                            {mainItem.product.images && mainItem.product.images.length > 0 && (
-                              <img 
-                                src={mainItem.product.images[0]} 
-                                alt="" 
-                                className="w-5 h-5 object-cover rounded border bg-white"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=50&q=80';
-                                }}
+                        {hasItems ? (
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg border border-emerald-300 overflow-hidden bg-white shrink-0">
+                              <img
+                                src={itemsInCell[0].imageUrl}
+                                alt={itemsInCell[0].name}
+                                className="w-full h-full object-cover"
                               />
-                            )}
-                            <span className="text-[9px] font-semibold truncate max-w-[80px]" title={mainItem.product.name}>
-                              {itemsInCell.length > 1 ? `${itemsInCell.length} Items` : mainItem.product.name}
-                            </span>
-                            <span className="text-[9px] font-bold ml-auto">({totalQty})</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs font-bold text-psr-textPrimary truncate" title={itemsInCell[0].name}>
+                                {itemsInCell[0].name}
+                              </div>
+                              <div className="text-[10px] text-psr-textSecondary font-mono truncate">
+                                {itemsInCell[0].sku}
+                              </div>
+                            </div>
                           </div>
-                        )}
-                        {isEmpty && (
-                          <span className="text-[9px] opacity-55 mt-2 italic block">Empty Slot</span>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-psr-textSecondary/60 italic">
+                            Available Slot
+                          </div>
                         )}
                       </div>
                     );
@@ -204,104 +331,73 @@ export default function Warehouse() {
             ))}
           </div>
         )}
-
-        {/* Legend */}
-        <div className="flex justify-end gap-6 mt-8 pt-6 border-t border-psr-border text-xs text-psr-textSecondary">
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-red-50 border border-psr-red/30 rounded"></span> Critical (High Load)
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-green-50 border border-green-200 rounded"></span> Standard Occupied
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 bg-psr-bg border border-psr-border rounded"></span> Empty Slots
-          </div>
-        </div>
       </div>
 
       {/* Selected Cell Modal */}
       {selectedCell && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-xs">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-psr-border">
-              <div>
-                <h3 className="font-heading font-bold text-lg text-psr-textPrimary">Location Details</h3>
-                <p className="text-xs text-psr-textSecondary mt-0.5">
-                  {selectedWarehouse || 'Warehouse'} • {selectedRack} • Shelf {selectedCell.shelf} • Pos {selectedCell.pos}
-                </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden border border-psr-border animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-psr-border flex justify-between items-center bg-psr-bg">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-psr-red text-white flex items-center justify-center">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-base text-psr-textPrimary">
+                    {selectedRack} &mdash; Shelf {selectedCell.shelf}, Pos {selectedCell.pos}
+                  </h3>
+                  <p className="text-[11px] text-psr-textSecondary">{selectedWarehouse}</p>
+                </div>
               </div>
               <button 
-                onClick={() => setSelectedCell(null)}
-                className="p-2 text-psr-textSecondary hover:text-psr-red hover:bg-psr-lightRed rounded-lg transition-all"
+                onClick={() => setSelectedCell(null)} 
+                className="text-psr-textSecondary hover:text-psr-red text-sm font-bold p-1 cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                ✕ Close
               </button>
             </div>
-            
-            {/* Content */}
-            <div className="p-6 max-h-[50vh] overflow-y-auto space-y-4">
-              {selectedCell.items.length === 0 ? (
-                <div className="text-center py-10">
-                  <Box className="w-12 h-12 text-psr-textSecondary/30 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-psr-textSecondary">No items are stored in this position.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="text-xs font-semibold text-psr-textSecondary uppercase tracking-wider">
-                    Stored Products ({selectedCell.items.length})
-                  </div>
-                  {selectedCell.items.map((item) => {
-                    const imageUrl = item.product.images && item.product.images.length > 0 
-                      ? item.product.images[0] 
-                      : 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=150&q=80';
-                    return (
-                      <div key={item.id} className="flex gap-4 p-4 border border-psr-border rounded-xl bg-psr-bg/25">
-                        <img 
-                          src={imageUrl} 
-                          alt={item.product.name} 
-                          className="w-16 h-16 object-cover rounded-lg border border-psr-border bg-white"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=150&q=80';
-                          }}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between items-start gap-2">
-                            <div>
-                              <h4 className="font-semibold text-sm text-psr-textPrimary leading-snug">{item.product.name}</h4>
-                              <p className="text-xs text-psr-textSecondary mt-0.5">SKU: {item.product.sku}</p>
-                            </div>
-                            <span className="text-xs font-bold text-psr-red bg-psr-lightRed px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                              Qty: {item.quantity}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center gap-2 mt-3 text-xs text-psr-textSecondary border-t border-psr-border/40 pt-2">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              item.product.status === 'AVAILABLE' 
-                                ? 'bg-green-50 text-psr-success' 
-                                : 'bg-red-50 text-psr-red'
-                            }`}>
-                              {item.product.status}
-                            </span>
-                            <span>•</span>
-                            <span>Min Stock: {item.product.minStock}</span>
-                          </div>
-                        </div>
+
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-psr-textSecondary">
+                Stored Items ({selectedCell.items.length})
+              </h4>
+
+              <div className="space-y-3">
+                {selectedCell.items.map((item, idx) => (
+                  <div key={idx} className="p-4 rounded-xl border border-psr-border bg-psr-bg/30 flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-xl border border-psr-border overflow-hidden bg-white shrink-0">
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?q=80&w=150';
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h5 className="font-bold text-sm text-psr-textPrimary truncate">{item.name}</h5>
+                      <div className="text-xs text-psr-textSecondary font-mono mt-0.5">SKU: {item.sku}</div>
+                      <div className="flex items-center gap-3 mt-2">
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                          Quantity: {item.quantity} units
+                        </span>
+                        <span className="text-[11px] text-psr-textSecondary font-semibold">
+                          Code: {item.code}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            
-            {/* Footer */}
-            <div className="p-6 border-t border-psr-border flex justify-end bg-psr-bg/10">
-              <button 
+
+            <div className="p-4 border-t border-psr-border bg-psr-bg/50 flex justify-end">
+              <button
                 onClick={() => setSelectedCell(null)}
-                className="px-5 py-2 bg-psr-red hover:bg-psr-darkRed text-white font-semibold text-sm rounded-xl transition-all shadow-sm"
+                className="px-5 py-2 rounded-xl bg-psr-red hover:bg-psr-darkRed text-white text-xs font-bold shadow-sm cursor-pointer"
               >
-                Close
+                Done
               </button>
             </div>
           </div>

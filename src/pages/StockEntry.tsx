@@ -25,12 +25,27 @@ export default function StockEntry() {
   const fetchProducts = async () => {
     try {
       const res = await axios.get('/api/products');
-      setProducts(res.data);
-      if (res.data.length > 0) {
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        setProducts(res.data);
         setSelectedSku(res.data[0].sku);
+      } else {
+        const invRes = await axios.get('/api/inventory');
+        if (Array.isArray(invRes.data) && invRes.data.length > 0) {
+          setProducts(invRes.data);
+          setSelectedSku(invRes.data[0].sku);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch products', err);
+      try {
+        const invRes = await axios.get('/api/inventory');
+        if (Array.isArray(invRes.data) && invRes.data.length > 0) {
+          setProducts(invRes.data);
+          setSelectedSku(invRes.data[0].sku);
+        }
+      } catch (e) {
+        console.error('Fallback fetch also failed', e);
+      }
     } finally {
       setIsLoadingProducts(false);
     }
@@ -181,21 +196,21 @@ export default function StockEntry() {
 
         <form onSubmit={handleLogStockArrival} className="mt-6 space-y-4">
           <div>
-            <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Select Product SKU</label>
+            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Select Product Name</label>
             <select
               required
               value={selectedSku}
               onChange={(e) => setSelectedSku(e.target.value)}
-              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+              className="w-full border border-psr-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-psr-red bg-white font-medium"
             >
               {isLoadingProducts ? (
-                <option value="">Loading products...</option>
+                <option value="">Loading product catalog...</option>
               ) : products.length === 0 ? (
                 <option value="">No products registered. Create one in Products page first.</option>
               ) : (
                 products.map((prod) => (
                   <option key={prod.id} value={prod.sku}>
-                    {prod.sku} — {prod.name}
+                    {prod.name} ({prod.sku})
                   </option>
                 ))
               )}

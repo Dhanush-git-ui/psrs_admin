@@ -18,9 +18,24 @@ export default function StockOut() {
   const fetchProducts = async () => {
     try {
       const res = await axios.get('/api/products');
-      setProducts(res.data);
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        setProducts(res.data);
+      } else {
+        const invRes = await axios.get('/api/inventory');
+        if (Array.isArray(invRes.data)) {
+          setProducts(invRes.data);
+        }
+      }
     } catch (err) {
       console.error('Failed to fetch products', err);
+      try {
+        const invRes = await axios.get('/api/inventory');
+        if (Array.isArray(invRes.data)) {
+          setProducts(invRes.data);
+        }
+      } catch (e) {
+        console.error('Fallback fetch also failed', e);
+      }
     } finally {
       setIsLoadingProducts(false);
     }
@@ -33,7 +48,7 @@ export default function StockOut() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku) {
-      alert('Please choose a product SKU first.');
+      alert('Please choose a product first.');
       return;
     }
     setIsSubmitting(true);
@@ -69,14 +84,14 @@ export default function StockOut() {
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Select Product SKU</label>
+            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Select Product Name</label>
             <select
               required
               value={formData.sku}
               onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-              className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white"
+              className="w-full border border-psr-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-psr-red bg-white font-medium"
             >
-              <option value="">-- Choose Item --</option>
+              <option value="">-- Choose Product --</option>
               {isLoadingProducts ? (
                 <option value="">Loading products...</option>
               ) : products.length === 0 ? (
@@ -84,7 +99,7 @@ export default function StockOut() {
               ) : (
                 products.map((prod) => (
                   <option key={prod.id} value={prod.sku}>
-                    {prod.sku} — {prod.name}
+                    {prod.name} ({prod.sku})
                   </option>
                 ))
               )}
