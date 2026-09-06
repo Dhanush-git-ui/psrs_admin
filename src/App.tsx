@@ -13,23 +13,19 @@ import Quotations from './pages/Quotations';
 // Fetch Clerk Key from process.env (Vite uses import.meta.env)
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-// Route guard checking matching roles
-const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) => {
-  const { user, isLoaded } = useUser();
+// Route guard checking authentication
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isLoaded } = useUser();
 
   if (!isLoaded) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-psr-bg">
-        <span className="animate-spin rounded-full h-8 w-8 border-4 border-psr-red border-t-transparent"></span>
+        <div className="flex flex-col items-center gap-3">
+          <span className="animate-spin rounded-full h-8 w-8 border-4 border-psr-red border-t-transparent"></span>
+          <span className="text-xs text-psr-textSecondary font-semibold">Loading PSR Admin...</span>
+        </div>
       </div>
     );
-  }
-
-  const defaultRole = import.meta.env.DEV ? 'ADMIN' : 'WAREHOUSE_STAFF';
-  const userRole = (user?.publicMetadata?.role as string | undefined) || defaultRole;
-
-  if (allowedRoles && (!userRole || !allowedRoles.includes(userRole))) {
-    return <Navigate to="/" replace />;
   }
 
   return (
@@ -53,13 +49,11 @@ export default function App() {
           
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-          <Route path="/products" element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN']}><Products /></ProtectedRoute>} />
-          <Route path="/warehouse" element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN', 'MANAGER']}><Warehouse /></ProtectedRoute>} />
+          <Route path="/products" element={<ProtectedRoute><Products /></ProtectedRoute>} />
+          <Route path="/warehouse" element={<ProtectedRoute><Warehouse /></ProtectedRoute>} />
           <Route path="/quotations" element={<ProtectedRoute><Quotations /></ProtectedRoute>} />
-          
-          {/* Warehouse Staff / Admin only paths */}
-          <Route path="/stock-entry" element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN', 'WAREHOUSE_STAFF', 'MANAGER']}><StockEntry /></ProtectedRoute>} />
-          <Route path="/stock-out" element={<ProtectedRoute allowedRoles={['ADMIN', 'SUPER_ADMIN', 'WAREHOUSE_STAFF', 'MANAGER']}><StockOut /></ProtectedRoute>} />
+          <Route path="/stock-entry" element={<ProtectedRoute><StockEntry /></ProtectedRoute>} />
+          <Route path="/stock-out" element={<ProtectedRoute><StockOut /></ProtectedRoute>} />
           
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
