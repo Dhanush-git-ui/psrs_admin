@@ -47,16 +47,25 @@ export default function StockOut() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.sku) {
-      alert('Please choose a product first.');
+    if (!formData.sku.trim()) {
+      alert('Please enter or select a product first.');
       return;
     }
     setIsSubmitting(true);
     try {
+      const matched = products.find(
+        (p) =>
+          p.sku?.toLowerCase() === formData.sku.trim().toLowerCase() ||
+          p.name?.toLowerCase() === formData.sku.trim().toLowerCase()
+      );
+
       await axios.post('/api/products/adjust-stock', {
-        sku: formData.sku,
+        sku: matched ? matched.sku : formData.sku.trim(),
+        productName: formData.sku.trim(),
+        name: formData.sku.trim(),
         quantity: formData.quantity,
-        action: 'OUTBOUND'
+        action: 'OUTBOUND',
+        reason: `Outbound release: Project ${formData.projectCode || 'N/A'}, Purpose: ${formData.purpose}${formData.remarks ? ', Note: ' + formData.remarks : ''}`
       });
       alert('Stock removal entry logged successfully! Stock levels updated and public site cache revalidated.');
       // Reset form fields
@@ -67,6 +76,7 @@ export default function StockOut() {
         purpose: 'Assigned to Project Site',
         remarks: '',
       });
+      fetchProducts();
     } catch (err: any) {
       console.error(err);
       alert('Failed to log stock release: ' + (err.response?.data?.error || err.message));
@@ -84,26 +94,23 @@ export default function StockOut() {
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Select Product Name</label>
-            <select
+            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Enter Product</label>
+            <input
               required
+              type="text"
+              list="stock-out-products-list"
               value={formData.sku}
               onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+              placeholder="Enter product name or SKU"
               className="w-full border border-psr-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-psr-red bg-white font-medium"
-            >
-              <option value="">-- Choose Product --</option>
-              {isLoadingProducts ? (
-                <option value="">Loading products...</option>
-              ) : products.length === 0 ? (
-                <option value="">No products registered. Create one in Products page first.</option>
-              ) : (
-                products.map((prod) => (
-                  <option key={prod.id} value={prod.sku}>
-                    {prod.name} ({prod.sku})
-                  </option>
-                ))
-              )}
-            </select>
+            />
+            <datalist id="stock-out-products-list">
+              {products.map((prod) => (
+                <option key={prod.id || prod.sku} value={prod.name}>
+                  {prod.sku ? `SKU: ${prod.sku} (Stock: ${prod.currentStock ?? prod.stock ?? 0})` : ''}
+                </option>
+              ))}
+            </datalist>
           </div>
           <div>
             <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Quantity to Release</label>

@@ -41,11 +41,13 @@ const productInputSchema = z.object({
 const adjustStockSchema = z.object({
   productId: z.string().optional(),
   sku: z.string().optional(),
+  productName: z.string().optional(),
+  name: z.string().optional(),
   action: z.enum(['INBOUND', 'OUTBOUND']),
   quantity: z.coerce.number().int().positive('Quantity must be greater than zero'),
   reason: z.string().max(500).optional(),
-}).refine(data => data.productId || data.sku, {
-  message: 'Either productId or sku must be provided',
+}).refine(data => data.productId || data.sku || data.productName || data.name, {
+  message: 'Either productId, sku, or productName must be provided',
   path: ['productId']
 });
 
@@ -398,17 +400,71 @@ export const adjustStock = async (req: Request, res: Response) => {
     return res.status(400).json({ error: validation.error.flatten().fieldErrors });
   }
 
-  const { sku, productId, quantity, action, reason } = validation.data;
+  const { sku, productId, productName, name, quantity, action, reason } = validation.data;
   const userId = (req as any).auth?.userId || 'client_website';
+  const searchName = (name || productName || '').trim();
 
   try {
     const updatedProduct = await prisma.$transaction(async (tx) => {
-      const product = await tx.product.findFirst({
-        where: sku ? { sku } : { id: productId }
+      let product = await tx.product.findFirst({
+        where: productId
+          ? { id: productId }
+          : sku
+          ? {
+              OR: [
+                { sku: { equals: sku, mode: 'insensitive' } },
+                { name: { equals: sku, mode: 'insensitive' } }
+              ]
+            }
+          : searchName
+          ? {
+              OR: [
+                { name: { equals: searchName, mode: 'insensitive' } },
+                { sku: { equals: searchName, mode: 'insensitive' } }
+              ]
+            }
+          : undefined
       });
 
       if (!product) {
-        throw new Error('PRODUCT_NOT_FOUND');
+        if (action === 'INBOUND') {
+          // Auto-create product for inbound arrival if not existing yet
+          const pName = searchName || sku || 'New Inbound Product';
+          const cleanName = pName.toUpperCase().replace(/[^A-Z0-9]/g, '-').slice(0, 8) || 'ITEM';
+          const genSku = (sku && sku.trim().length > 0 && !sku.includes(' '))
+            ? sku.trim().toUpperCase()
+            : ('PSR-' + cleanName + '-' + Math.floor(100 + Math.random() * 900));
+
+          let defaultCat = await tx.category.findFirst();
+          if (!defaultCat) {
+            defaultCat = await tx.category.create({
+              data: { name: 'Drilling Rigs & Machinery' }
+            });
+          }
+
+          product = await tx.product.create({
+            data: {
+              name: pName,
+              code: 'COD-' + genSku,
+              sku: genSku,
+              categoryId: defaultCat.id,
+              description: pName,
+              material: 'Hardened High-Grade Industrial Steel',
+              unit: 'pcs',
+              manufacturer: "PSR'S Drills",
+              currentStock: 0,
+              minStock: 5,
+              maxStock: 500,
+              costPrice: 0,
+              sellingPrice: 0,
+              currency: 'USD',
+              status: 'OUT_OF_STOCK',
+              images: ['/images/inventory/IMG_3086.jpg']
+            }
+          });
+        } else {
+          throw new Error('PRODUCT_NOT_FOUND');
+        }
       }
 
       if (!product.isActive) {

@@ -14,10 +14,10 @@ export default function StockEntry() {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplierName, setSupplierName] = useState('');
   const [quantity, setQuantity] = useState(1);
-  const [selectedSku, setSelectedSku] = useState('');
+  const [productName, setProductName] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
 
-  // Products state for dropdown
+  // Products state for suggestions
   const [products, setProducts] = useState<any[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,12 +27,10 @@ export default function StockEntry() {
       const res = await axios.get('/api/products');
       if (Array.isArray(res.data) && res.data.length > 0) {
         setProducts(res.data);
-        setSelectedSku(res.data[0].sku);
       } else {
         const invRes = await axios.get('/api/inventory');
         if (Array.isArray(invRes.data) && invRes.data.length > 0) {
           setProducts(invRes.data);
-          setSelectedSku(invRes.data[0].sku);
         }
       }
     } catch (err) {
@@ -41,7 +39,6 @@ export default function StockEntry() {
         const invRes = await axios.get('/api/inventory');
         if (Array.isArray(invRes.data) && invRes.data.length > 0) {
           setProducts(invRes.data);
-          setSelectedSku(invRes.data[0].sku);
         }
       } catch (e) {
         console.error('Fallback fetch also failed', e);
@@ -77,15 +74,9 @@ export default function StockEntry() {
         setSupplierName(response.data.supplierName || '');
         setQuantity(response.data.quantity || 1);
         
-        // Attempt to find and match product by name returned by OCR
+        // Fill product name returned by OCR
         if (response.data.productName) {
-          const matched = products.find(p => 
-            p.name.toLowerCase().includes(response.data.productName.toLowerCase()) || 
-            response.data.productName.toLowerCase().includes(p.name.toLowerCase())
-          );
-          if (matched) {
-            setSelectedSku(matched.sku);
-          }
+          setProductName(response.data.productName);
         }
       }
     } catch (err) {
@@ -98,23 +89,34 @@ export default function StockEntry() {
 
   const handleLogStockArrival = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedSku) {
-      alert('Please select a product SKU first.');
+    if (!productName.trim()) {
+      alert('Please enter a product name or SKU.');
       return;
     }
     setIsSubmitting(true);
     try {
+      const matched = products.find(
+        (p) =>
+          p.sku?.toLowerCase() === productName.trim().toLowerCase() ||
+          p.name?.toLowerCase() === productName.trim().toLowerCase()
+      );
+
       await axios.post('/api/products/adjust-stock', {
-        sku: selectedSku,
+        sku: matched ? matched.sku : productName.trim(),
+        productName: productName.trim(),
+        name: productName.trim(),
         quantity,
-        action: 'INBOUND'
+        action: 'INBOUND',
+        reason: `Inbound receipt${invoiceNumber ? ' (Inv #' + invoiceNumber + ')' : ''}${supplierName ? ' from ' + supplierName : ''}`
       });
       alert('Stock arrival logged successfully! Stock levels updated and public site cache revalidated.');
       // Reset form fields
+      setProductName('');
       setInvoiceNumber('');
       setSupplierName('');
       setQuantity(1);
       setBatchNumber('');
+      fetchProducts();
     } catch (err: any) {
       console.error(err);
       alert('Failed to log stock arrival: ' + (err.response?.data?.error || err.message));
@@ -196,25 +198,23 @@ export default function StockEntry() {
 
         <form onSubmit={handleLogStockArrival} className="mt-6 space-y-4">
           <div>
-            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Select Product Name</label>
-            <select
+            <label className="text-xs font-bold text-psr-textSecondary block mb-1">Enter Product</label>
+            <input
               required
-              value={selectedSku}
-              onChange={(e) => setSelectedSku(e.target.value)}
+              type="text"
+              list="stock-entry-products-list"
+              value={productName}
+              onChange={(e) => setProductName(e.target.value)}
+              placeholder="Enter product name or SKU (e.g. Diamond Core Drill Bit 50mm)"
               className="w-full border border-psr-border rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-psr-red bg-white font-medium"
-            >
-              {isLoadingProducts ? (
-                <option value="">Loading product catalog...</option>
-              ) : products.length === 0 ? (
-                <option value="">No products registered. Create one in Products page first.</option>
-              ) : (
-                products.map((prod) => (
-                  <option key={prod.id} value={prod.sku}>
-                    {prod.name} ({prod.sku})
-                  </option>
-                ))
-              )}
-            </select>
+            />
+            <datalist id="stock-entry-products-list">
+              {products.map((prod) => (
+                <option key={prod.id || prod.sku} value={prod.name}>
+                  {prod.sku ? `SKU: ${prod.sku}` : ''}
+                </option>
+              ))}
+            </datalist>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
