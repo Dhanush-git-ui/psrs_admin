@@ -125,8 +125,17 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Safe Clerk middleware initialization
 try {
-  if (process.env.CLERK_SECRET_KEY || process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY) {
-    app.use(clerkMiddleware());
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  const publishableKey = process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY;
+  if (secretKey && publishableKey) {
+    app.use((req, res, next) => {
+      try {
+        return clerkMiddleware({ secretKey, publishableKey })(req, res, next);
+      } catch (e) {
+        console.warn('Clerk middleware error, proceeding:', e);
+        return next();
+      }
+    });
   }
 } catch (clerkErr) {
   console.warn('[Clerk] Initialization warning:', clerkErr);
@@ -160,5 +169,11 @@ app.get('/api/categories', getCategories);
 app.get('/api/warehouses', getWarehouses);
 app.get('/api/products/:productId/qrcode', getProductQRCode);
 app.get('/api/products/:sku/barcode', getProductBarcode);
+
+// Global express error handler to ensure JSON is always returned
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[API Internal Server Error]:', err);
+  res.status(500).json({ error: err?.message || 'A server error has occurred' });
+});
 
 export default app;

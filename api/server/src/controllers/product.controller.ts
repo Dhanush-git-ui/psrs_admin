@@ -184,7 +184,8 @@ export const addProduct = async (req: Request, res: Response) => {
 };
 
 export const updateProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : String(rawId || '');
   const validation = productInputSchema.partial().safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({ error: validation.error.format() });
@@ -250,7 +251,8 @@ export const updateProduct = async (req: Request, res: Response) => {
 };
 
 export const deleteProduct = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : String(rawId || '');
   try {
     const product = await prisma.product.findFirst({
       where: {
