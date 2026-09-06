@@ -1,8 +1,6 @@
 import type { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 const updateStatusSchema = z.object({
   status: z.enum(['PENDING', 'REVIEWED', 'APPROVED', 'REJECTED'])

@@ -1,10 +1,9 @@
 import type { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db';
 import { OpenAI } from 'openai';
 
 import { z } from 'zod';
 
-const prisma = new PrismaClient();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key' });
 
 const aiSearchSchema = z.object({

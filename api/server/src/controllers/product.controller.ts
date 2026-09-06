@@ -1,9 +1,7 @@
 import type { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../db';
 import { triggerMainSiteRevalidate } from '../services/revalidate.service';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 // Zod validation schemas
 const productInputSchema = z.object({
