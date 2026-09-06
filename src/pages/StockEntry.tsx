@@ -4,6 +4,7 @@ import axios from 'axios';
 
 export default function StockEntry() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scannedData, setScannedData] = useState<any>(null);
   
@@ -15,6 +16,7 @@ export default function StockEntry() {
   const [supplierName, setSupplierName] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [productName, setProductName] = useState('');
+  const [warehouse, setWarehouse] = useState('Warehouse A');
   const [batchNumber, setBatchNumber] = useState('');
 
   // Products state for suggestions
@@ -54,7 +56,13 @@ export default function StockEntry() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -107,15 +115,24 @@ export default function StockEntry() {
         name: productName.trim(),
         quantity,
         action: 'INBOUND',
+        image: imagePreview || undefined,
+        images: imagePreview ? [imagePreview] : undefined,
+        warehouse,
+        batchNumber: batchNumber || undefined,
+        invoiceNumber: invoiceNumber || undefined,
+        supplierName: supplierName || undefined,
         reason: `Inbound receipt${invoiceNumber ? ' (Inv #' + invoiceNumber + ')' : ''}${supplierName ? ' from ' + supplierName : ''}`
       });
-      alert('Stock arrival logged successfully! Stock levels updated and public site cache revalidated.');
+      alert('Stock arrival logged successfully! Photo and stock levels updated.');
       // Reset form fields
       setProductName('');
       setInvoiceNumber('');
       setSupplierName('');
       setQuantity(1);
       setBatchNumber('');
+      setSelectedFile(null);
+      setImagePreview(null);
+      setScannedData(null);
       fetchProducts();
     } catch (err: any) {
       console.error('Stock arrival error:', err);
@@ -146,18 +163,34 @@ export default function StockEntry() {
         <h3 className="font-heading font-semibold text-base pb-3 border-b border-psr-border">Invoice OCR Scanner</h3>
 
         {/* Drag & drop file input */}
-        <div className="border-2 border-dashed border-psr-border hover:border-psr-red rounded-xl p-6 text-center cursor-pointer transition-colors relative">
+        <div className="border-2 border-dashed border-psr-border hover:border-psr-red rounded-xl p-4 text-center cursor-pointer transition-colors relative bg-psr-bg/40">
           <input
             type="file"
             onChange={handleFileChange}
-            className="absolute inset-0 opacity-0 cursor-pointer"
+            className="absolute inset-0 opacity-0 cursor-pointer z-10"
             accept="image/*,application/pdf"
           />
-          <Upload className="w-8 h-8 text-psr-textSecondary mx-auto mb-2" />
-          <span className="text-xs font-semibold block text-psr-textPrimary">
-            {selectedFile ? selectedFile.name : 'Click to upload invoice / image'}
-          </span>
-          <span className="text-[10px] text-psr-textSecondary mt-1 block">Supports PDF, PNG, JPG</span>
+          {imagePreview ? (
+            <div className="space-y-2">
+              <img 
+                src={imagePreview} 
+                alt="Uploaded drill preview" 
+                className="w-full h-36 object-contain rounded-lg border border-psr-border bg-white"
+              />
+              <span className="text-xs font-semibold block text-psr-textPrimary truncate">
+                {selectedFile?.name || 'Photo selected'}
+              </span>
+              <span className="text-[10px] text-psr-red block">Click or drop to replace photo</span>
+            </div>
+          ) : (
+            <div>
+              <Upload className="w-8 h-8 text-psr-textSecondary mx-auto mb-2" />
+              <span className="text-xs font-semibold block text-psr-textPrimary">
+                {selectedFile ? selectedFile.name : 'Click to upload drill photo / invoice'}
+              </span>
+              <span className="text-[10px] text-psr-textSecondary mt-1 block">Supports PNG, JPG, JPEG, PDF</span>
+            </div>
+          )}
         </div>
 
         {/* Hidden Camera Input */}
@@ -270,10 +303,14 @@ export default function StockEntry() {
             </div>
             <div>
               <label className="text-xs font-semibold text-psr-textSecondary block mb-1">Allocation Warehouse</label>
-              <select className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white">
-                <option>Warehouse A</option>
-                <option>Warehouse B</option>
-                <option>Warehouse C</option>
+              <select 
+                value={warehouse}
+                onChange={(e) => setWarehouse(e.target.value)}
+                className="w-full border border-psr-border rounded-lg px-3 py-2 text-sm focus:outline-none bg-white focus:border-psr-red"
+              >
+                <option value="Warehouse A">Warehouse A</option>
+                <option value="Warehouse B">Warehouse B</option>
+                <option value="Warehouse C">Warehouse C</option>
               </select>
             </div>
             <div>

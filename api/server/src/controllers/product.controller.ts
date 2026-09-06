@@ -46,9 +46,16 @@ const adjustStockSchema = z.object({
   action: z.enum(['INBOUND', 'OUTBOUND']),
   quantity: z.coerce.number().int().positive('Quantity must be greater than zero'),
   reason: z.string().max(500).optional(),
+  image: z.string().optional(),
+  imageUrl: z.string().optional(),
+  images: z.array(z.string()).optional(),
+  supplierName: z.string().optional(),
+  invoiceNumber: z.string().optional(),
+  batchNumber: z.string().optional(),
+  warehouse: z.string().optional(),
 }).refine(data => data.productId || data.sku || data.productName || data.name, {
   message: 'Either productId, sku, or productName must be provided',
-  path: ['productId']
+  path: ['productName']
 });
 
 export const addProduct = async (req: Request, res: Response) => {
@@ -401,9 +408,26 @@ export const adjustStock = async (req: Request, res: Response) => {
     return res.status(400).json({ error: errorDetails || 'Invalid stock adjustment input data' });
   }
 
-  const { sku, productId, productName, name, quantity, action, reason } = validation.data;
+  const { 
+    sku, 
+    productId, 
+    productName, 
+    name, 
+    quantity, 
+    action, 
+    reason, 
+    image, 
+    imageUrl, 
+    images, 
+    supplierName,
+    warehouse,
+    batchNumber,
+    invoiceNumber 
+  } = validation.data;
   const userId = (req as any).auth?.userId || 'client_website';
   const searchName = (name || productName || '').trim();
+  const rawImage = image || imageUrl || (images && images[0]) || '';
+  const photoToSave = rawImage.trim() ? rawImage.trim() : null;
 
   try {
     const updatedProduct = await prisma.$transaction(async (tx) => {
@@ -443,6 +467,8 @@ export const adjustStock = async (req: Request, res: Response) => {
             });
           }
 
+          const initialImages = photoToSave ? [photoToSave] : ['/images/inventory/IMG_3086.jpg'];
+
           product = await tx.product.create({
             data: {
               name: pName,
@@ -452,15 +478,15 @@ export const adjustStock = async (req: Request, res: Response) => {
               description: pName,
               material: 'Hardened High-Grade Industrial Steel',
               unit: 'pcs',
-              manufacturer: "PSR'S Drills",
+              manufacturer: supplierName || "PSR'S Drills",
               currentStock: 0,
               minStock: 5,
               maxStock: 500,
               costPrice: 0,
               sellingPrice: 0,
               currency: 'USD',
-              status: 'OUT_OF_STOCK',
-              images: ['/images/inventory/IMG_3086.jpg']
+              status: 'AVAILABLE',
+              images: initialImages
             }
           });
         } else {
@@ -487,12 +513,19 @@ export const adjustStock = async (req: Request, res: Response) => {
         newStatus = 'LOW_STOCK';
       }
 
-      // Update product stock levels
+      // Update product images if a photo was provided
+      const currentImages = Array.isArray(product.images) ? product.images : [];
+      const updatedImages = photoToSave
+        ? [photoToSave, ...currentImages.filter(img => img !== photoToSave)]
+        : currentImages;
+
+      // Update product stock levels and image
       const updated = await tx.product.update({
         where: { id: product.id },
         data: {
           currentStock: newStock,
-          status: newStatus as any
+          status: newStatus as any,
+          images: updatedImages
         }
       });
 
