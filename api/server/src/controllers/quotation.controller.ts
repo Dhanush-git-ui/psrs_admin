@@ -18,10 +18,11 @@ const createQuotationSchema = z.object({
   urgency: z.string().min(1, 'Urgency is required'),
   message: z.string().nullable().optional(),
   items: z.array(z.object({
-    productId: z.string(),
-    name: z.string(),
-    category: z.string(),
-    quantity: z.number().int().positive(),
+    id: z.string().optional(),
+    productId: z.string().optional(),
+    name: z.string().default('Product Item'),
+    category: z.string().optional().default('General'),
+    quantity: z.coerce.number().int().positive().default(1),
     specs: z.any().optional(),
   }))
 });

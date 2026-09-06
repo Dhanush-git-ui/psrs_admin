@@ -1,6 +1,5 @@
-// client/src/pages/Products.tsx
 import React, { useState, useEffect } from 'react';
-import { Plus, Check, ArrowUpDown } from 'lucide-react';
+import { Plus, Check, ArrowUpDown, Trash2, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 
 export default function Products() {
@@ -8,6 +7,7 @@ export default function Products() {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -50,6 +50,24 @@ export default function Products() {
     init();
   }, []);
 
+  const handleDeleteProduct = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingId(id);
+    try {
+      await axios.delete(`/api/products/${id}`);
+      setProducts((prev) => prev.filter((p) => p.id !== id && p.sku !== id));
+      alert(`Product "${name}" deleted successfully.`);
+    } catch (err: any) {
+      console.error('Failed to delete product', err);
+      alert('Failed to delete product: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -67,7 +85,7 @@ export default function Products() {
         currentStock: 0,
         unit: 'pcs',
       });
-      alert('Product created successfully and main site cache revalidated!');
+      alert('Product created successfully and live catalog synchronized!');
       fetchProducts(); // Refresh list
     } catch (err: any) {
       console.error(err);
@@ -84,12 +102,21 @@ export default function Products() {
           <h2 className="text-lg font-semibold text-psr-textPrimary">Products Specification Database</h2>
           <p className="text-xs text-psr-textSecondary">Manage product dimensions, technical diagrams, and master SKUs.</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-psr-red hover:bg-psr-darkRed text-white text-sm font-semibold shadow-sm transition-all"
-        >
-          <Plus className="w-4 h-4" /> New Product
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => { setIsLoading(true); fetchProducts().finally(() => setIsLoading(false)); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-psr-border bg-white text-xs font-semibold text-psr-textSecondary hover:bg-psr-bg transition-all"
+            title="Refresh database"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-psr-red hover:bg-psr-darkRed text-white text-sm font-semibold shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" /> New Product
+          </button>
+        </div>
       </div>
 
       {/* Products Master table */}
@@ -108,8 +135,10 @@ export default function Products() {
                   <th className="px-6 py-4">Code</th>
                   <th className="px-6 py-4">SKU</th>
                   <th className="px-6 py-4">Unit</th>
+                  <th className="px-6 py-4">Current Stock</th>
                   <th className="px-6 py-4">Min Stock</th>
                   <th className="px-6 py-4">Max Stock</th>
+                  <th className="px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-psr-border text-sm">
@@ -122,8 +151,19 @@ export default function Products() {
                     <td className="px-6 py-4 text-psr-textSecondary">{prod.code}</td>
                     <td className="px-6 py-4 font-semibold">{prod.sku}</td>
                     <td className="px-6 py-4">{prod.unit}</td>
+                    <td className="px-6 py-4 font-numbers font-semibold text-psr-textPrimary">{prod.currentStock ?? 0}</td>
                     <td className="px-6 py-4 font-numbers">{prod.minStock}</td>
                     <td className="px-6 py-4 font-numbers">{prod.maxStock}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteProduct(prod.id, prod.name)}
+                        disabled={deletingId === prod.id}
+                        className="p-1.5 rounded-lg text-psr-textSecondary hover:text-psr-red hover:bg-psr-lightRed transition-all"
+                        title="Delete product"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
