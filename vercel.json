@@ -16,7 +16,7 @@
   ],
   "functions": {
     "api/index.ts": {
-      "includeFiles": "src/**"
+      "includeFiles": "prisma/**"
     }
   }
 }

@@ -6,7 +6,7 @@ import { z } from 'zod';
 const prisma = new PrismaClient();
 
 // Zod validation schemas
-const addProductSchema = z.object({
+const productInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   code: z.string().optional(),
   sku: z.string().optional(),
@@ -19,10 +19,10 @@ const addProductSchema = z.object({
   longDescription: z.string().nullable().optional(),
   material: z.string().nullable().optional(),
   dimensions: z.string().nullable().optional(),
-  weight: z.coerce.number().positive().nullable().optional(),
-  length: z.coerce.number().positive().nullable().optional(),
-  width: z.coerce.number().positive().nullable().optional(),
-  height: z.coerce.number().positive().nullable().optional(),
+  weight: z.coerce.number().nullable().optional(),
+  length: z.coerce.number().nullable().optional(),
+  width: z.coerce.number().nullable().optional(),
+  height: z.coerce.number().nullable().optional(),
   unit: z.string().default('pcs'),
   manufacturer: z.string().nullable().optional(),
   supplierId: z.string().nullable().optional(),
@@ -52,7 +52,7 @@ const adjustStockSchema = z.object({
 });
 
 export const addProduct = async (req: Request, res: Response) => {
-  const validation = addProductSchema.safeParse(req.body);
+  const validation = productInputSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({ error: validation.error.format() });
   }
@@ -76,18 +76,20 @@ export const addProduct = async (req: Request, res: Response) => {
     }
 
     // Auto-generate SKU and code if not provided
-    const sku = data.sku || ('PSR-' + data.name.toUpperCase().replace(/[^A-Z0-9]/g, '-').slice(0, 8) + '-' + Math.floor(100 + Math.random() * 900));
+    const cleanName = data.name.toUpperCase().replace(/[^A-Z0-9]/g, '-').slice(0, 8);
+    const sku = data.sku || ('PSR-' + cleanName + '-' + Math.floor(100 + Math.random() * 900));
     const code = data.code || ('COD-' + sku);
 
-    // Parse image URLs
+    // Parse image URLs or base64 data URLs
     let images: string[] = [];
-    if (data.images && Array.isArray(data.images)) {
-      images = data.images;
-    } else if (data.imageUrl) {
-      images = [data.imageUrl];
-    } else if (data.image) {
-      images = [data.image];
-    } else {
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      images = data.images.filter(img => Boolean(img && img.trim()));
+    } else if (data.imageUrl && data.imageUrl.trim()) {
+      images = [data.imageUrl.trim()];
+    } else if (data.image && data.image.trim()) {
+      images = [data.image.trim()];
+    }
+    if (images.length === 0) {
       images = ['/images/inventory/IMG_3086.jpg'];
     }
 
@@ -108,7 +110,7 @@ export const addProduct = async (req: Request, res: Response) => {
         modelNumber: data.modelNumber || null,
         compatibleMachine: data.compatibleMachine || null,
         description: data.description || data.name,
-        material: data.material || null,
+        material: data.material || 'Hardened High-Grade Industrial Steel',
         weight: data.weight || null,
         length: data.length || null,
         width: data.width || null,
@@ -123,7 +125,7 @@ export const addProduct = async (req: Request, res: Response) => {
         costPrice: data.costPrice || 0,
         sellingPrice: data.sellingPrice || 0,
         currency: data.currency || 'USD',
-        subCategory: data.subCategory || '',
+        subCategory: data.subCategory || data.category || '',
         status: (data.status as any) || status,
         images,
       },
@@ -161,11 +163,81 @@ export const addProduct = async (req: Request, res: Response) => {
     }
     
     // Trigger instant cache revalidation on the main website
-    await triggerMainSiteRevalidate(newProduct.id);
+    try {
+      await triggerMainSiteRevalidate(newProduct.id);
+    } catch (e) {
+      // non-fatal
+    }
 
     return res.status(201).json(newProduct);
   } catch (err: any) {
     console.error('Failed to add product:', err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+export const updateProduct = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const validation = productInputSchema.partial().safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({ error: validation.error.format() });
+  }
+
+  try {
+    const product = await prisma.product.findFirst({
+      where: {
+        OR: [{ id }, { sku: id }, { code: id }]
+      }
+    });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    const data = validation.data;
+    let images = product.images;
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      images = data.images.filter(img => Boolean(img && img.trim()));
+    } else if (data.imageUrl && data.imageUrl.trim()) {
+      images = [data.imageUrl.trim()];
+    } else if (data.image && data.image.trim()) {
+      images = [data.image.trim()];
+    }
+
+    const updated = await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.code && { code: data.code }),
+        ...(data.sku && { sku: data.sku }),
+        ...(data.categoryId && { categoryId: data.categoryId }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.material !== undefined && { material: data.material }),
+        ...(data.weight !== undefined && { weight: data.weight }),
+        ...(data.unit && { unit: data.unit }),
+        ...(data.minStock !== undefined && { minStock: data.minStock }),
+        ...(data.maxStock !== undefined && { maxStock: data.maxStock }),
+        ...(data.currentStock !== undefined && { currentStock: data.currentStock }),
+        ...(data.costPrice !== undefined && { costPrice: data.costPrice }),
+        ...(data.sellingPrice !== undefined && { sellingPrice: data.sellingPrice }),
+        ...(data.status && { status: data.status as any }),
+        images,
+      },
+      include: {
+        category: true,
+      }
+    });
+
+    // Trigger instant cache revalidation on the main website
+    try {
+      await triggerMainSiteRevalidate(updated.id);
+    } catch (e) {
+      // non-fatal
+    }
+
+    return res.json(updated);
+  } catch (err: any) {
+    console.error('Failed to update product:', err);
     return res.status(500).json({ error: err.message });
   }
 };
@@ -201,7 +273,11 @@ export const deleteProduct = async (req: Request, res: Response) => {
     });
 
     // Trigger instant cache revalidation on the main website
-    await triggerMainSiteRevalidate(product.id);
+    try {
+      await triggerMainSiteRevalidate(product.id);
+    } catch (e) {
+      // non-fatal
+    }
 
     return res.json({ 
       success: true, 
@@ -266,6 +342,10 @@ export const getInventory = async (_req: Request, res: Response) => {
         'DAMAGED': 'Out of Stock'
       };
 
+      const productImages = (prod.images && prod.images.length > 0)
+        ? prod.images
+        : ['/images/inventory/IMG_3086.jpg'];
+
       return {
         id: prod.id,
         name: prod.name,
@@ -291,7 +371,8 @@ export const getInventory = async (_req: Request, res: Response) => {
         rackPosition: firstLoc?.position?.name || 'Pos 1',
         shelfNumber: firstLoc?.shelfNumber || 'Shelf 1',
         status: statusMap[prod.status] || (prod.currentStock > 10 ? 'In Stock' : prod.currentStock > 0 ? 'Low Stock' : 'Out of Stock'),
-        images: prod.images && prod.images.length > 0 ? prod.images : ['/images/inventory/IMG_3086.jpg'],
+        images: productImages,
+        imageUrl: productImages[0],
         barcode: prod.barcode || `BAR-${prod.sku}`,
         qrCode: prod.qrCode || `QR-${prod.sku}`,
         lastUpdatedDate: prod.updatedAt ? new Date(prod.updatedAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
@@ -388,7 +469,11 @@ export const adjustStock = async (req: Request, res: Response) => {
     });
 
     // Trigger instant cache revalidation on the main website
-    await triggerMainSiteRevalidate(updatedProduct.id);
+    try {
+      await triggerMainSiteRevalidate(updatedProduct.id);
+    } catch (e) {
+      // non-fatal
+    }
 
     return res.json(updatedProduct);
   } catch (err: any) {
@@ -404,4 +489,3 @@ export const adjustStock = async (req: Request, res: Response) => {
     return res.status(500).json({ error: err.message });
   }
 };
-

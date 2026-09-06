@@ -7,18 +7,26 @@ import rateLimit from 'express-rate-limit';
 // Initialize env vars before loading Clerk
 dotenv.config();
 
-// Clerk Express SDK looks for CLERK_PUBLISHABLE_KEY
+// Ensure Clerk publishable key is set
 process.env.CLERK_PUBLISHABLE_KEY = process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 import { clerkMiddleware } from '@clerk/express';
-import { addProduct, deleteProduct, getProducts, getInventory, getCategories, adjustStock } from './server/src/controllers/product.controller';
+import { 
+  addProduct, 
+  deleteProduct, 
+  updateProduct,
+  getProducts, 
+  getInventory, 
+  getCategories, 
+  adjustStock 
+} from './server/src/controllers/product.controller';
 import { getProductQRCode, getProductBarcode } from './server/src/controllers/code.controller';
 import { handleSmartSearch } from './server/src/controllers/ai.controller';
 import { scanInvoice } from './server/src/controllers/ocr.controller';
 import { getQuotations, updateQuotationStatus, createQuotation } from './server/src/controllers/quotation.controller';
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: '/tmp' });
 
 // Middleware to require authentication (Clerk)
 export const requireClerkAuth = (req: any, res: any, next: any) => {
@@ -110,11 +118,28 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
-app.use(clerkMiddleware());
+// Support large image payloads (Base64 uploads)
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// Safe Clerk middleware initialization
+try {
+  if (process.env.CLERK_SECRET_KEY || process.env.CLERK_PUBLISHABLE_KEY || process.env.VITE_CLERK_PUBLISHABLE_KEY) {
+    app.use(clerkMiddleware());
+  }
+} catch (clerkErr) {
+  console.warn('[Clerk] Initialization warning:', clerkErr);
+}
+
+// Health Check
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Products & Inventory Endpoints (mutating actions available to sync catalog)
 app.post('/api/products', addProduct);
+app.put('/api/products/:id', updateProduct);
+app.patch('/api/products/:id', updateProduct);
 app.delete('/api/products/:id', deleteProduct);
 app.post('/api/products/adjust-stock', adjustStock);
 
